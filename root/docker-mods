@@ -1,4 +1,4 @@
-#!/usr/bin/with-contenv bash
+#!/command/with-contenv bash
 
 # Exit if mods is not set
 if [ -z ${DOCKER_MODS+x} ]; then

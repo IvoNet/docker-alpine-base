@@ -1,65 +1,31 @@
-FROM alpine:3.13 as rootfs-stage
-
-# environment
-ENV REL=v3.13
-ENV ARCH=x86_64
-ENV MIRROR=http://dl-cdn.alpinelinux.org/alpine
-ENV PACKAGES=alpine-baselayout,\
-alpine-keys,\
-apk-tools,\
-busybox,\
-libc-utils,\
-xz
-
-# install packages
-RUN \
- apk add --no-cache \
-	bash \
-	curl \
-	tzdata \
-	xz
-
-# fetch builder script from gliderlabs
-RUN \
- curl -o \
- /mkimage-alpine.bash -L \
-	https://raw.githubusercontent.com/gliderlabs/docker-alpine/master/builder/scripts/mkimage-alpine.bash && \
- chmod +x \
-	/mkimage-alpine.bash && \
- ./mkimage-alpine.bash  && \
- mkdir /root-out && \
- tar xf \
-	/rootfs.tar.xz -C \
-	/root-out && \
- sed -i -e 's/^root::/root:!:/' /root-out/etc/shadow
-
-# Runtime stage
-FROM scratch
-COPY --from=rootfs-stage /root-out/ /
-ARG BUILD_DATE
-ARG VERSION
+FROM alpine:3.15.4
 LABEL maintainer="@IvoNet"
 
 # set version for s6 overlay
-ARG OVERLAY_VERSION="v2.2.0.0"
-ARG OVERLAY_ARCH="amd64"
+ARG OVERLAY_VERSION="v3.1.0.1"
 
-# add s6 overlay
-ADD https://github.com/just-containers/s6-overlay/releases/download/${OVERLAY_VERSION}/s6-overlay-${OVERLAY_ARCH}-installer /tmp/
-RUN chmod +x /tmp/s6-overlay-${OVERLAY_ARCH}-installer && /tmp/s6-overlay-${OVERLAY_ARCH}-installer / && rm /tmp/s6-overlay-${OVERLAY_ARCH}-installer
-COPY patch/ /tmp/patch
+RUN apk --no-cache --no-progress add bash curl tar xz \
+ && curl -s -L "https://github.com/just-containers/s6-overlay/releases/download/v3.1.0.1/s6-overlay-noarch.tar.xz" -o /tmp/s6-overlay-noarch.tar.xz \
+ && tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz \
+ && curl -s -L "https://github.com/just-containers/s6-overlay/releases/download/v3.1.0.1/s6-overlay-$(uname -m).tar.xz" -o /tmp/s6-overlay-$(uname -m).tar.xz \
+ && tar -C / -Jxpf /tmp/s6-overlay-$(uname -m).tar.xz \
+ && apk del --purge tar xz \
+ && rm -rfv /tmp/* \
 
 # environment variables
 ENV PS1="$(whoami):$(pwd)\\$ " \
-HOME="/root" \
-TERM="xterm"
+    HOME="/root" \
+    TERM="xterm"
+
+COPY root/ /
 
 RUN \
  echo "**** install build packages ****" && \
  apk add --no-cache --virtual=build-dependencies \
 	curl \
 	patch \
-	tar && \
+	tar \
+    xz && \
  echo "**** install runtime packages ****" && \
  apk add --no-cache \
 	bash \
@@ -76,15 +42,13 @@ RUN \
 	/app \
 	/config \
 	/defaults && \
- mv /usr/bin/with-contenv /usr/bin/with-contenvb && \
- patch -u /etc/s6/init/init-stage2 -i /tmp/patch/etc/s6/init/init-stage2.patch && \
  echo "**** cleanup ****" && \
- apk del --purge \
-	build-dependencies && \
+ apk del --purge build-dependencies && \
+ chmod +x /etc/cont-init.d/* && \
  rm -rf \
 	/tmp/*
 
-# add local files
-COPY root/ /
+
+
 
 ENTRYPOINT ["/init"]
